@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>רשימת קניות - סנכרון חי</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; margin: 40px; background-color: #f8f9fa; display: flex; justify-content: center; direction: rtl; }
+        .container { width: 100%; max-width: 450px; background: white; padding: 25px; border-radius: 12px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #333; margin-bottom: 25px; }
+        .input-group { display: flex; gap: 10px; margin-bottom: 25px; }
+        input { flex: 1; padding: 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 16px; text-align: right; }
+        ul { list-style: none; padding: 0; margin: 0; }
+        li { display: flex; justify-content: space-between; align-items: center; background: #fff; padding: 12px; border-bottom: 1px solid #eee; }
+        .item-text { flex: 1; cursor: pointer; font-size: 18px; text-align: right; }
+        .in-cart { text-decoration: line-through !important; color: #888 !important; }
+        .add-btn { background: #28a745; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .delete-btn { background: #ff4d4d; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>סל הקניות שלי</h1>
+    <div class="input-group">
+        <input type="text" id="item-input" placeholder="מה להוסיף לסל?" autocomplete="off">
+        <button class="add-btn" onclick="addItem()">הוסף</button>
+    </div>
+    <ul id="shopping-list"></ul>
+</div>
+
+<script>
+    (function() {
+        const SB_URL = 'https://mbphwmslltiuorovubvu.supabase.co';
+        const SB_KEY = 'sb_publishable_H7uKfsx_Gk21oMpbcA0vlw_wAw1es2t';
+        const supabaseClient = window.supabase.createClient(SB_URL, SB_KEY);
+
+        // פונקציה לטעינת הנתונים
+        window.loadItems = async function() {
+            const { data, error } = await supabaseClient
+                .from('shopping_items')
+                .select('*')
+                .order('created_at', { ascending: false });
+
+            if (error) return;
+
+            const listElement = document.getElementById('shopping-list');
+            listElement.innerHTML = ''; 
+
+            data.forEach(item => {
+                const li = document.createElement('li');
+                li.innerHTML = `
+                    <span class="item-text ${item.is_in_cart ? 'in-cart' : ''}" 
+                          onclick="toggleStatus('${item.id}', ${item.is_in_cart})">
+                        ${item.item_name}
+                    </span>
+                    <button class="delete-btn" onclick="deleteItem('${item.id}')">מחק</button>
+                `;
+                listElement.appendChild(li);
+            });
+        };
+
+        // פונקציית ה-Realtime: כאן קורה הקסם
+        function setupRealtime() {
+            supabaseClient
+                .channel('any_channel_name') 
+                .on('postgres_changes', 
+                    { event: '*', schema: 'public', table: 'shopping_items' }, 
+                    (payload) => {
+                        console.log('שינוי זוהה!', payload);
+                        loadItems(); // טוען מחדש את הרשימה ברגע שיש שינוי ב-DB
+                    }
+                )
+                .subscribe();
+        }
+
+        window.addItem = async function() {
+            const input = document.getElementById('item-input');
+            const name = input.value.trim();
+            if (!name) return;
+            await supabaseClient.from('shopping_items').insert([{ item_name: name, is_in_cart: false }]);
+            input.value = '';
+        };
+
+        window.toggleStatus = async function(id, currentStatus) {
+            await supabaseClient.from('shopping_items').update({ is_in_cart: !currentStatus }).eq('id', id);
+        };
+
+        window.deleteItem = async function(id) {
+            await supabaseClient.from('shopping_items').delete().eq('id', id);
+        };
+
+        document.getElementById('item-input').onkeypress = (e) => { if (e.key === 'Enter') addItem(); };
+
+        // הפעלה
+        loadItems();
+        setupRealtime();
+    })();
+</script>
+</body>
+</html>
